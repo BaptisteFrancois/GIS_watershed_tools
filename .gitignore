@@ -1,0 +1,11 @@
+
+
+data/CMIP6/figures/**
+data/CMIP6/processed/**
+
+figures/*.png
+
+
+/build
+/dist
+*.egg-info

@@ -1,0 +1,3 @@
+[submodule "GIS_watershed_tools/dem_getter"]
+	path = GIS_watershed_tools/dem_getter
+	url = https://code.usgs.gov/gecsc/dem_getter.git

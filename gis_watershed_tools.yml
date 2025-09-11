@@ -1,0 +1,23 @@
+name: rivercloud_gis
+channels:
+  - defaults
+  - conda-forge
+dependencies: 
+  - pandas
+  - numpy
+  - geopandas
+  - rasterio
+  - shapely
+  - pyproj
+  - scikit-learn
+  - gdal
+  - scipy
+  - matplotlib
+  - pip
+  - xarray
+  - whitebox
+  - tqdm
+# The dem_getter must be installed manually 
+# git+https://code.usgs.gov/gecsc/dem_getter.git@main#egg=dem_getter
+      
+

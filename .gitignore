@@ -2,6 +2,14 @@
 
 data/CMIP6/figures/**
 data/CMIP6/processed/**
+data/MERIT_Hydro/**
+data/shapefiles/ResOpsUS_catchments/**
+data/shapefiles/CAMELS/**
+data/shapefiles/Orinoquia/**
+data/shapefiles/RioGrande/**
+
+GIS_watershed_tools/temp_files/**
+
 
 figures/*.png
 

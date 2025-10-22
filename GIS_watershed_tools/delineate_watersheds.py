@@ -1,6 +1,7 @@
 
 
 import os
+import shutil
 import tempfile
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -307,7 +308,6 @@ def main(path_outlets,
                 xytype='coordinate')
 
             outlet = catchment_touches_edge(catch, edge_buffer=8)
-            print(outlet)
 
             k += 1
             if k > 10:
@@ -336,7 +336,12 @@ def main(path_outlets,
         if outlet['touches']:
             print(f'Warning: Catchment for {outlet_attrs["DAM_NAME"][i]} may be incomplete due to edge touching.')
     
-
+    # Clean up temporary files
+    temp_dir = 'temp_files'
+    if os.path.exists(temp_dir):
+        for f in os.listdir(temp_dir):
+            shutil.rmtree(os.path.join(temp_dir, f), ignore_errors=True)
+        os.rmdir(temp_dir)
 
 if __name__ == "__main__":
     

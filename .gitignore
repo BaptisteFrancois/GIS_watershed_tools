@@ -2,7 +2,7 @@
 
 data/CMIP6/figures/**
 data/CMIP6/processed/**
-#data/MERIT_Hydro/**
+data/MERIT_Hydro/**
 data/shapefiles/ResOpsUS_catchments/**
 data/shapefiles/CAMELS/**
 data/shapefiles/Orinoquia/**

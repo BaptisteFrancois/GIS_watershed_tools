@@ -40,6 +40,8 @@ def find_merit_tile(lon, lat, path, variable, temp_dir='temp_files'):
         var = 'upa'
     elif variable == 'flow_direction':
         var = 'dir'
+    elif variable == 'elevation':
+        var = 'elv'
     else:
         raise ValueError('Variable not recognized')
 
@@ -214,142 +216,156 @@ def merge_tiles(raster_ini, origin_ini, next_tiles, path, grid_shape, transform,
 
 
 
-def main(path_outlets, 
-         path_MERIT_Hydro,
-         path_figures='../figures/',
-         path_shapefiles='../data/shapefiles/ResOpsUS_catchments/',
-         show_figures=False
-    ):
+#def main(path_outlets, 
+#         path_MERIT_Hydro,
+#         path_figures='../figures/',
+#         path_shapefiles='../data/shapefiles/ResOpsUS_catchments/',
+#         show_figures=False
+#    ):
+
+path_outlets = 'D:/17_TOVA/DPL_ABCD-cc-robustness/data/ResOpsUS/attributes/reservoir_attributes.csv'
+path_MERIT_Hydro = '../data/MERIT_Hydro/'
+path_figures='../figures/'
+path_shapefiles='../data/shapefiles/ResOpsUS_catchments/'   
+show_figures = False 
+
+"""Delineate watersheds for given outlet coordinates using MERIT Hydro data.
+- path_outlets: path to CSV file with outlet coordinates (columns 'LONG' and 'LAT')
+- path_MERIT_Hydro: path to the MERIT Hydro data directory. The directory should contain the 
+    `.tar` files that can be found at https://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_Hydro/.
+    The flow direction (dir_*.tar) and flow accumulation (upa_*.tar) files are needed for the 
+    regions of interest.
+- path_figures: path to save output figures
+- path_shapefiles: path to save output shapefiles
+"""
+
+# Create output directories if they don't exist
+os.makedirs(path_figures, exist_ok=True)
+os.makedirs(path_shapefiles, exist_ok=True)
+
+# Extract outlet coordinates from the CSV
+outlet_attrs = pd.read_csv(path_outlets)
+outlet_coords = [(lon, lat) for lon, lat in zip(outlet_attrs['LONG'], outlet_attrs['LAT'])]
+
+# Define the direction mapping for D8 flow direction (given in the MERIT Hydro dataset)
+dirmap = (
+    64, # North
+    128, # Northeast
+    1, # East
+    2, # Southeast
+    4, # South
+    8, # Southwest
+    16, # West
+    32 # Northwest
+)
 
 
-    """Delineate watersheds for given outlet coordinates using MERIT Hydro data.
-    - path_outlets: path to CSV file with outlet coordinates (columns 'LONG' and 'LAT')
-    - path_MERIT_Hydro: path to the MERIT Hydro data directory. The directory should contain the 
-        `.tar` files that can be found at https://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_Hydro/.
-        The flow direction (dir_*.tar) and flow accumulation (upa_*.tar) files are needed for the 
-        regions of interest.
-    - path_figures: path to save output figures
-    - path_shapefiles: path to save output shapefiles
-    """
+# Loop over outlet coordinates and delineate watersheds
+for i, (lon, lat) in enumerate(outlet_coords):
 
-    # Create output directories if they don't exist
-    os.makedirs(path_figures, exist_ok=True)
-    os.makedirs(path_shapefiles, exist_ok=True)
+    # Find the archive `.tar` file where the flow accumulation is stored
+    # The HYRO1k MERIT Hydro data is organized in tiles with 30 arc-second resolution
+    # You need to implement a function to find the correct tile based on lon/lat
+    # For simplicity, let's assume we have a function `find_merit_tile(lon, lat)` that returns the file path
+    flow_acc_path, (lat_origin, lon_origin) = \
+        find_merit_tile(lon, lat, path_MERIT_Hydro, variable='flow_accumulation')
+    flow_dir_path, (lat_origin, lon_origin) = \
+        find_merit_tile(lon, lat, path_MERIT_Hydro, variable='flow_direction')
 
-    # Extract outlet coordinates from the CSV
-    outlet_attrs = pd.read_csv(path_outlets)
-    outlet_coords = [(lon, lat) for lon, lat in zip(outlet_attrs['LONG'], outlet_attrs['LAT'])]
+    # Load flow direction and accumulation rasters
+    grid = Grid.from_raster(flow_acc_path)
+    acc = grid.read_raster(flow_acc_path, dirmap=dirmap)
+    fdir = grid.read_raster(flow_dir_path, dirmap=dirmap)
 
-    # Define the direction mapping for D8 flow direction (given in the MERIT Hydro dataset)
-    dirmap = (
-        64, # North
-        128, # Northeast
-        1, # East
-        2, # Southeast
-        4, # South
-        8, # Southwest
-        16, # West
-        32 # Northwest
-    )
+    # Snap the point to the nearest high accumulation cell
+    x_snap, y_snap = grid.snap_to_mask(acc > 1000, (lon, lat))
+    
+    # Delineate the catchment
+    catch = grid.catchment(x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype='coordinate')
 
+    outlet = catchment_touches_edge(catch, edge_buffer=8)
 
-    # Loop over outlet coordinates and delineate watersheds
-    for i, (lon, lat) in enumerate(outlet_coords):
+    # If `catchment_touches_edge` indicates touching, open the next tile(s) and merge catchments as needed
+    k = 0
+    path_dir_raster = flow_dir_path
+    origin_tiles = [(lat_origin, lon_origin)]
+    while outlet['touches']:
 
-        # Find the archive `.tar` file where the flow accumulation is stored
-        # The HYRO1k MERIT Hydro data is organized in tiles with 30 arc-second resolution
-        # You need to implement a function to find the correct tile based on lon/lat
-        # For simplicity, let's assume we have a function `find_merit_tile(lon, lat)` that returns the file path
-        flow_acc_path, (lat_origin, lon_origin) = \
-            find_merit_tile(lon, lat, path_MERIT_Hydro, variable='flow_accumulation')
-        flow_dir_path, (lat_origin, lon_origin) = \
-            find_merit_tile(lon, lat, path_MERIT_Hydro, variable='flow_direction')
+        next_tiles = outlet['next_tiles']
 
-        # Load flow direction and accumulation rasters
-        grid = Grid.from_raster(flow_acc_path)
-        acc = grid.read_raster(flow_acc_path, dirmap=dirmap)
-        fdir = grid.read_raster(flow_dir_path, dirmap=dirmap)
+        # Merge the necessary tiles
+        path_dir_raster, origin_tiles = merge_tiles(
+            path_dir_raster,
+            origin_tiles,
+            next_tiles,
+            path_MERIT_Hydro, 
+            grid_shape=grid.shape,
+            transform=grid.affine,
+            variable='flow_direction'
+        )
 
-        # Snap the point to the nearest high accumulation cell
-        x_snap, y_snap = grid.snap_to_mask(acc > 1000, (lon, lat))
-        
-        # Delineate the catchment
-        catch = grid.catchment(x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype='coordinate')
+        # Recalculate catchment on merged raster
+        grid = Grid.from_raster(path_dir_raster)
+        merged_catch = grid.read_raster(path_dir_raster, dirmap=dirmap)
+        catch = grid.catchment(
+            x=x_snap, 
+            y=y_snap, 
+            fdir=merged_catch, 
+            dirmap=dirmap, 
+            xytype='coordinate')
 
         outlet = catchment_touches_edge(catch, edge_buffer=8)
 
-        # If `catchment_touches_edge` indicates touching, open the next tile(s) and merge catchments as needed
-        k = 0
-        path_dir_raster = flow_dir_path
-        origin_tiles = [(lat_origin, lon_origin)]
-        while outlet['touches']:
-
-            next_tiles = outlet['next_tiles']
-
-            # Merge the necessary tiles
-            path_dir_raster, origin_tiles = merge_tiles(
-                path_dir_raster,
-                origin_tiles,
-                next_tiles,
-                path_MERIT_Hydro, 
-                grid_shape=grid.shape,
-                transform=grid.affine,
-                variable='flow_direction'
-            )
-
-            # Recalculate catchment on merged raster
-            grid = Grid.from_raster(path_dir_raster)
-            merged_catch = grid.read_raster(path_dir_raster, dirmap=dirmap)
-            catch = grid.catchment(
-                x=x_snap, 
-                y=y_snap, 
-                fdir=merged_catch, 
-                dirmap=dirmap, 
-                xytype='coordinate')
-
-            outlet = catchment_touches_edge(catch, edge_buffer=8)
-
-            k += 1
-            if k > 10:
-                print(f'Exceeded maximum iterations for point ({lon}, {lat}). Skipping.')
-                break
+        k += 1
+        if k > 10:
+            print(f'Exceeded maximum iterations for point ({lon}, {lat}). Skipping.')
+            break
 
 
-        # Extract shapes from the raster catchment mask
-        shape_gen = shapes(catch.astype(np.uint8), mask=catch.astype(bool), transform=grid.affine)
-        geometries = [shape(geom) for geom, value in shape_gen if value == 1]
-        # Save the catchment as a shapefile
-        gdf = gpd.GeoDataFrame(geometry=geometries, crs='EPSG:4326')
-        gdf.to_file(f'{path_shapefiles}/DAMID{outlet_attrs["DAM_ID"][i]}_{outlet_attrs["DAM_NAME"][i].replace(" ", "_")}.shp')
+    # Extract shapes from the raster catchment mask
+    shape_gen = shapes(catch.astype(np.uint8), mask=catch.astype(bool), transform=grid.affine)
+    geometries = [shape(geom) for geom, value in shape_gen if value == 1]
+    # Save the catchment as a shapefile
+    gdf = gpd.GeoDataFrame(geometry=geometries, crs='EPSG:4326')
 
+    # Check if there are multiple geometries and dissolve them into one if so
 
-        # Plot the catchment (x and y should be in the raster's coordinate reference system)
-        fig, ax = plt.subplots(figsize=(8, 8))
-        plt.imshow(catch, cmap='Blues', extent=grid.extent)
-        ax.plot(x_snap, y_snap, 'ro')  # Mark the snapped outlet point
-        ax.set_title(f'{outlet_attrs["DAM_NAME"][i]} ({lon}, {lat})\nTouch Edge: {outlet["touches"]}, Reason: {outlet["reason"]}')
-        fig.savefig(f'{path_figures}/DAMID_{outlet_attrs["DAM_ID"][i]}_{outlet_attrs["DAM_NAME"][i].replace(" ", "_")}.png')
-        if show_figures:
-            plt.show()
-        plt.close()
+    if len(gdf) == 2:
+        # Calculate area for each geometry
+        areas = gdf.geometry.to_crs(epsg=3395).area / 10**6  # Convert from m² to km²
+        # Check if any geometry has area smaller than 1 km²
+        if (areas < 1).any():
+            gdf = gdf.dissolve()
+    elif len(gdf) > 2:
+        break
 
-        if outlet['touches']:
-            print(f'Warning: Catchment for {outlet_attrs["DAM_NAME"][i]} may be incomplete due to edge touching.')
+    # Plot the catchment (x and y should be in the raster's coordinate reference system)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plt.imshow(catch, cmap='Blues', extent=grid.extent)
+    ax.plot(x_snap, y_snap, 'ro')  # Mark the snapped outlet point
+    ax.set_title(f'{outlet_attrs["DAM_NAME"][i]} ({lon}, {lat})\nTouch Edge: {outlet["touches"]}, Reason: {outlet["reason"]}')
+    fig.savefig(f'{path_figures}/DAMID_{outlet_attrs["DAM_ID"][i]}_{outlet_attrs["DAM_NAME"][i].replace(" ", "_")}.png')
+    if show_figures:
+        plt.show()
+    plt.close()
+
+    if outlet['touches']:
+        print(f'Warning: Catchment for {outlet_attrs["DAM_NAME"][i]} may be incomplete due to edge touching.')
+
+# Clean up temporary files
+temp_dir = 'temp_files'
+if os.path.exists(temp_dir):
+    for f in os.listdir(temp_dir):
+        shutil.rmtree(os.path.join(temp_dir, f), ignore_errors=True)
+    os.rmdir(temp_dir)
+
+#if __name__ == "__main__":
     
-    # Clean up temporary files
-    temp_dir = 'temp_files'
-    if os.path.exists(temp_dir):
-        for f in os.listdir(temp_dir):
-            shutil.rmtree(os.path.join(temp_dir, f), ignore_errors=True)
-        os.rmdir(temp_dir)
+#    path_outlets = 'D:/17_TOVA/DPL_ABCD-cc-robustness/data/ResOpsUS/attributes/reservoir_attributes.csv'
+#    path_MERIT_Hydro = '../data/MERIT_Hydro/'
+#    path_figures='../figures/'
+#    path_shapefiles='../data/shapefiles/ResOpsUS_catchments/'   
+#    show_figures = False 
 
-if __name__ == "__main__":
-    
-    path_outlets = 'D:/17_TOVA/DPL_ABCD-cc-robustness/data/ResOpsUS/attributes/reservoir_attributes.csv'
-    path_MERIT_Hydro = '../data/MERIT_Hydro/'
-    path_figures='../figures/'
-    path_shapefiles='../data/shapefiles/ResOpsUS_catchments/'   
-    show_figures = False 
-    
-    main(path_outlets, path_MERIT_Hydro, path_figures, path_shapefiles)
+#    main(path_outlets, path_MERIT_Hydro, path_figures, path_shapefiles)
 

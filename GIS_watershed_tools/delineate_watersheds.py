@@ -1,4 +1,4 @@
-
+# conda: gis_watershed
 
 import os
 import shutil
@@ -223,11 +223,7 @@ def main(path_outlets,
          show_figures=False
     ):
 
-    path_outlets = 'D:/17_TOVA/DPL_ABCD-cc-robustness/data/ResOpsUS/attributes/reservoir_attributes.csv'
-    path_MERIT_Hydro = '../data/MERIT_Hydro/'
-    path_figures='../figures/'
-    path_shapefiles='../data/shapefiles/ResOpsUS_catchments/'   
-    show_figures = False 
+
 
     """Delineate watersheds for given outlet coordinates using MERIT Hydro data.
     - path_outlets: path to CSV file with outlet coordinates (columns 'LONG' and 'LAT')
@@ -262,7 +258,7 @@ def main(path_outlets,
 
     # Loop over outlet coordinates and delineate watersheds
     for i, (lon, lat) in enumerate(outlet_coords):
-
+        
         # Find the archive `.tar` file where the flow accumulation is stored
         # The HYRO1k MERIT Hydro data is organized in tiles with 30 arc-second resolution
         # You need to implement a function to find the correct tile based on lon/lat
@@ -330,14 +326,20 @@ def main(path_outlets,
 
         # Check if there are multiple geometries and dissolve them into one if so
 
-        if len(gdf) == 2:
+        if len(gdf) > 1:
+            
             # Calculate area for each geometry
-            areas = gdf.geometry.to_crs(epsg=3395).area / 10**6  # Convert from m² to km²
-            # Check if any geometry has area smaller than 1 km²
-            if (areas < 1).any():
-                gdf = gdf.dissolve()
-        elif len(gdf) > 2:
-            break
+            areas = gdf.geometry.to_crs(epsg=6933).area / 10**6  # Convert from m² to km²
+            # Identify is more than one geometry is larger than 1 km²
+            if sum(areas > 1) == 1:
+                # If so, remove the small geometry and keep the larger one
+                idx_to_keep = areas.idxmax()
+                gdf = gdf.loc[[idx_to_keep]]
+            else:
+                break
+
+        gdf.to_file(f'{path_shapefiles}/DAMID_{outlet_attrs["DAM_ID"][i]}_{outlet_attrs["DAM_NAME"][i].replace(" ", "_")}.shp')
+
 
         # Plot the catchment (x and y should be in the raster's coordinate reference system)
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -360,12 +362,12 @@ def main(path_outlets,
         os.rmdir(temp_dir)
 
 if __name__ == "__main__":
-    
-       path_outlets = 'D:/17_TOVA/DPL_ABCD-cc-robustness/data/ResOpsUS/attributes/reservoir_attributes.csv'
-       path_MERIT_Hydro = '../data/MERIT_Hydro/'
-       path_figures='../figures/'
-       path_shapefiles='../data/shapefiles/ResOpsUS_catchments/'   
-       show_figures = False 
 
-       main(path_outlets, path_MERIT_Hydro, path_figures, path_shapefiles)
+    path_outlets = 'D:/17_TOVA/DPL_ABCD-cc-robustness/data/ResOpsUS/attributes/reservoir_attributes.csv'
+    path_MERIT_Hydro = '../data/MERIT_Hydro/'
+    path_figures='../figures/'
+    path_shapefiles='../data/shapefiles/ResOpsUS_catchments/'   
+    show_figures = False 
+
+    main(path_outlets, path_MERIT_Hydro, path_figures, path_shapefiles)
 

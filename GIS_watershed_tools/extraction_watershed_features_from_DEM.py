@@ -1,5 +1,5 @@
 
-# CONDA ENV: rivercloud_gis
+# CONDA ENV: gis_watershed_tools
 
 # This script extracts the Livneh-Lusu dataset for the 671 basins in the CAMELS dataset.
 

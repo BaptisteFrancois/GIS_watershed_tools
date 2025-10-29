@@ -1,0 +1,22 @@
+name: gis_watershed
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - pandas
+  - numpy
+  - geopandas
+  - rasterio
+  - shapely
+  - pyproj
+  - scikit-learn
+  - gdal
+  - scipy
+  - matplotlib
+  - pip
+  - xarray
+  - whitebox
+  -pip:
+    - pysheds
+
+

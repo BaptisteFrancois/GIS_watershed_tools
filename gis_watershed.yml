@@ -16,7 +16,7 @@ dependencies:
   - pip
   - xarray
   - whitebox
-  -pip:
+  - pip:
     - pysheds
 
 
